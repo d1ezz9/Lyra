@@ -1,0 +1,64 @@
+# DECISIONS.md — допущения (коротко: что и почему)
+
+- Стек: Electron+TS+React+Vite+electron-builder → AppImage. Причина: самый предсказуемый путь к AppImage с вшитыми бинарниками; Tauri усложняет sidecar-упаковку.
+- UI: собственный M3 на токенах (без MUI): navigation rail 80dp, segmented buttons, search bar 28px, filled/tonal/outlined/text кнопки, icon-buttons 48dp, switch, checkbox (CSS-галочка без глифов), tabs, cards, FAB 56dp/radius16, диалог 28dp, snackbar. Иконки — официальные пути Material Icons (icons.tsx), текстовых заглушек нет (логотип — PNG из BC2, плейсхолдеры — note-иконка). Слайдер и linear progress — свои M3-компоненты (Progress.tsx): input[type=range] не M3. Renderer имеет browser-fallback стаб window.lyra (main.tsx), чтобы UI открывался и без Electron.
+- mpv: управление процессом `mpv --input-ipc-server` + JSON IPC через socket. Причина: надёжнее, чем libmpv-нативные биндинги (node-mpv требует нативной сборки, ломается в AppImage); socket-протокол стабилен.
+- Аудиострим: yt-dlp резолвит URL → mpv играет прямую ссылку. Причина: единый путь для SC/YTM/матчей Spotify.
+- YTM метаданные: yt-dlp `ytsearch` + прямые ссылки; опциональный InnerTube-слой позже. Причина: youtubei.js нестабилен (частые breaking changes YouTube); yt-dlp обновляется чаще.
+- БД: better-sqlite3 (синхронный, main-процесс). Причина: простота, транзакции, FTS для поиска по библиотеке.
+- Состояние UI: Zustand. Причина: минимум бойлерплейта, хорошо с Electron IPC-подписками.
+- MPRIS2: реализовано вручную через `dbus-next` (интерфейс org.mpris.MediaPlayer2). Причина: без GNOME-зависимостей, работает в любом DE.
+- Auth: отдельный persistent session `persist:lyra-auth` в BrowserWindow; секреты — safeStorage, fallback AES-256-GCM (ключ в safeStorage, если keyring нет — машинный ключ + предупреждение в UI). Никогда не логируем.
+- YT cookies в yt-dlp только при необходимости (приватное/возрастное/библиотека), флаг `--cookies`. Причина: требование ТЗ + снижение риска бана.
+- Spotify client_id: `LYRA_SPOTIFY_CLIENT_ID` env → настройки → OAuth PKCE loopback `http://127.0.0.1:8899/callback`. Scopes минимальные. Причина: без бэкенда PKCE — единственный безопасный вариант для десктопа.
+- Матчинг Spotify→audio: нормализация (lower, скобки, feat), стоп-слова live/remix/cover/sped up/slowed, порог длительности ±3с (превью <60с отметаются), score = 0.6*title + 0.3*artist + 0.1*duration. Фолбэк SC→YTM включён по умолчанию.
+- Форматы загрузки: opus (default, best) / m4a / mp3 / flac (transcode при необходимости), теги+обложка через ffmpeg. Причина: opus — лучшее качество/размер; mp3 — совместимость.
+- User-Agent: `Lyra/<version> (<repository>)`, версия из package.json в рантайме. Причина: требование ТЗ, LRCLIB/MusicBrainz требуют контакт.
+- XDG: `~/.config/lyra`, `~/.cache/lyra`, `~/.local/share/lyra` через env-override (`XDG_*_HOME`). Причина: требование ТЗ + Linux-конвенция.
+- Бинарники: используем системные mpv/yt-dlp/ffmpeg при сборке dev; в AppImage кладём через electron-builder `extraResources` (скачивание на `postinstall`/первый запуск с проверкой версии + кнопка «Обновить yt-dlp»). Причина: distro-зависимые патчи mpv; вшитый yt-dlp (pip-бинарник) обновляем в фоне.
+- Источник: одиночный селектор (local/soundcloud/youtubemusic/spotify, Ctrl+1..4), без режима «Все». Причина: требование пользователя; мультивыбор усложнял очередь и матчинг.
+- Бэкенд реальный: поиск SC/YTM через yt-dlp (исправлен двойной префикс ytsearch:scsearch:), стрим — resolveStreamUrl→mpv (проверено: играет 01:01:44), локалка — dialog+рекурсивный скан (music-metadata, fallback на имя файла), Spotify — Web API client credentials (нужны ID+SECRET) + матчинг scoreMatch при воспроизведении. Скачивание — spawn yt-dlp -x с парсингом прогресса → IPC-события.
+- Локализация только RU/EN (i18n.ts, detect по navigator.language). Других языков не будет.
+- Демо-контент удалён полностью (плейлисты, загрузки): пустые состояния вместо заглушек.
+- Селектор источников — M3 exposed dropdown menu (поле + меню 48dp, чек + статус-точки), сегмент-кнопки удалены. Причина: требование пользователя.
+- Шрифты вшиты в сборку: Manrope (display/headline/title) + Inter (body/labels), woff2 cyrillic+latin, ~740КБ. Причина: в целевых Linux нет Roboto/Inter; разные семейства по просьбе пользователя.
+- user-select:none глобально (кроме input/textarea/select), img не перетаскиваются: это приложение, а не сайт.
+- Отступы: content 16/24/32, topbar 16/24/12, grid gap 16 (M3 window margins).
+- Треки не запускались: причина — searchFlat отдавал `url` из API-ссылки SoundCloud вместо webpage_url (+ двойной префикс). Исправлен entryUrl(): приоритет webpage_url, фолбэк на watch?v=. mpv.load теперь ждёт IPC (ensureConnected) и бросает ошибку вместо тихого провала.
+- ~/Music не видели: битые файлы пропускались сканом целиком — теперь попадают в список по имени файла. Плюс автоскан системной папки музыки при первом заходе в локалку.
+- Логин SC игнорировался: добавлен lyra:auth-status (проверка oauth_token/SID cookies) + событие lyra:login-done при закрытии окна + экспорт cookies в yt-dlp; в UI статусы и кнопки Войти/Выйти (Настройки, Библиотека, меню источников).
+- Клик по треку молчал: mpv сохраняет pause между loadfile — теперь load() всегда снимает паузу. Плюс явная ошибка в UI вместо тишины.
+- Ложный «YT подключён»: засчитываются только cookies с доменом youtube.com (SSO google.com — нет). Проверка через loggedIn-маркер главной при возможности.
+- Юзернеймы вместо «connected»: SC — /me по OAuth-токену, YT — displayName главной (best-effort, фолбэк без имени).
+- Раздельные партиции persist:lyra-auth-{sc,yt,sp}: выход из одного не трогает другие. Системный браузер отклонён: cookies SC/YT оттуда не забрать без ручного копипаста.
+- Rail выдвижной: иконки-only 84px + клик по лого → 264px с подписями (состояние в localStorage). Иконки rail 28px.
+- Слайдер переписан: thumb внутри gutter-трека (не обрезается), громкость — иконка mute + мини-слайдер 148px. Плеер: обложка 52px/r12, время pos/dur, MPRIS state sync на паузе.
+- Тексты настоящие: sidecar .lrc → LRCLIB synced (проверено: 40 строк) → plain → «не найден». Позиция live из mpv.
+- «Подобрать версию» — реальный диалог кандидатов с обеих платформ, выбор заменяет url трека.
+- Анимации: смена экранов, меню, диалог, снэкбар, transitions фонов; prefers-reduced-motion отключает.
+- yt-dlp версия подтягивается сама при открытии Настроек.
+- Прогресс/подсветка стояли: mpv шлёт `data`, а не `value` в property-change — парсер починен, pos/dur живые.
+- M3 сверен с актуальной спекой (Expressive): слайдер — трек 16dp + бар-хэндл (не круг), rail 80/220 (пилюля 56×32, иконки 24), icon-button 40 (play 56), трек linear/progress — secondary-container, search 56, карточки filled — highest, dialog 28/p24, list 72, menu 4/48, checkbox 18/2.
+- Spotify: системный браузер + PKCE loopback → реальные токены, библиотека, refresh, имя профиля. SC/YT остались во встроенном окне: cookies для yt-dlp из системного браузера недоступны.
+- SC-библиотека реальная: client_id извлекается из веб-клиента, likes/playlists по oauth_token; чарты — trending (top гео-режет). Поиск плейлистов — api-v2 (SC); YTM плейлисты — только по ссылке (yt-dlp не умеет искать плейлисты).
+- Home — виджеты (продолжить из персистентной очереди, чарты, шорткаты). Очередь персистится в localStorage.
+- Окно frameless + кастомные контролы (36px titlebar, drag-регион). Плеер и Now Playing — кастомные rounded медиа-иконки.
+- yt-dlp update: -U → pip → прямая загрузка бинарника с GitHub (лечит 403).
+- DRM-треки (SC Go+ премьеры, напр. on.soundcloud.com/XNWjZQbQkGxfK6Ki2L): yt-dlp «This video is DRM protected», обхода нет и не будет — play-track ловит DRM/preview/geo/удаление и автоматом подбирает тот же трек на другой платформе (бейдж audioSource). Проверено: YTM-версия играет.
+- Переключение трека: play-track начинается с mpv halt — предыдущий глохнет сразу, не дожидаясь резолва следующего. Неудачный трек помечается и пропускается, конец трека — автопереход к следующему играбельному.
+- Скачивание плейлиста целиком: кнопка на строках плейлистов (поиск/библиотека) → выбор папки → до 3 потоков, пропуск уже-скачанных (find-local по нормализованным именам), папка запоминается; открытие плейлиста подхватывает localPath. download-start принимает dest и отдаёт file через --print after_move.
+- Текст: активная строка центрируется scrollIntoView center+smooth при follow; ручной скролл (wheel) отключает follow, клик по строке возвращает.
+- MPRIS настоящий (mpris-service): org.mpris.MediaPlayer2.lyra, Identity Lyra, методы Play/Pause/PlayPause/Stop/Next/Previous/Seek/SetPosition, метаданные+позиция+громкость — playerctl работает (проверено dbus-send). Пойманы два бага упаковки: default-экспорт и выкинутые electron-builder транзитивные deps get-intrinsic-семьи (прибиты гвоздями в dependencies). Диагностика — ~/.cache/lyra/lyra.log.
+- XDG-пути чинены по спеке: $XDG_*_HOME/lyra (раньше возвращали голый XDG_BASE без суффикса).
+- Логотип в сайдбаре — инлайн-SVG в M3-тонах (primary-container/on-primary-container), адаптируется под тему. Шрифт надписи Lyra — Unbounded 700.
+- Окно frameless+transparent, скругление 16px через CSS.
+- Селектор платформ переехал в Настройки (M3 radio rows со статусами); в шапке только wordmark. Ctrl+1..4 живы.
+- Очередь: обложки в строках, title/автор, платформа справа.
+- Fade между треками: 스위тч + длительность до 5с (fade out/in через громкость mpv). Shuffle/Repeat/Next/Prev идут через реальную очередь (mpv держит один файл — его playlist-next был no-op, теперь advance()).
+- Автоскачивание (default ON): играющий трек фоном качается в ~/.local/share/lyra/downloads (opus), повторы играют с диска (кэш id→file).
+- Библиотека: плейлисты — карточки с коллажем 2×2 (обложки первых треков), клик открывает страницу плейлиста (треки, слушать всё, скачать всё). Лайки — списком.
+- Тумблер поиска треки/плейлисты (плейлисты — SC api-v2; YTM только по ссылке).
+- Кастомные селекторы везде (DropDown на M3 menu): тема, язык, порядок, формат.
+- Тема-пикер: карточки с живым превью и палитрой, целый раздел.
+- Виджеты Home настраиваются свитчами.
+- Логотип: утверждён вариант BC2 (перекладина лиры + струны-волна, цвета B: фон #1d1b20, #d0bcff; центр x=32; 1 итерация правок). Финал: `resources/logo-final.svg` → PNG 16–512 в `resources/icons/`, `build/icon.png` (AppImage/.desktop), иконка окна, трей 32px, «О приложении». MPRIS: иконки в спеke нет, identity остался «Lyra».

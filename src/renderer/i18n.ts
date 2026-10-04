@@ -1,0 +1,93 @@
+export type Lang = 'ru' | 'en';
+
+const en = {
+  navHome: 'Home', navSearch: 'Search', navPlaylists: 'Playlists', navQueue: 'Queue', navDownloads: 'Downloads', navSettings: 'Settings',
+  srcLocal: 'Local', srcSC: 'SoundCloud', srcYTM: 'YouTube Music', srcSP: 'Spotify',
+  searchTitle: 'Search', searchPh: 'Query, link or paste (Ctrl+V)', searchGo: 'Find', searchWait: '…',
+  searchDetected: 'Detected source', searchErr: 'Search error, see Journal', searchNoRes: 'Nothing found. Try another query or source.',
+  searchNeedId: 'Spotify needs LYRA_SPOTIFY_CLIENT_ID + LYRA_SPOTIFY_CLIENT_SECRET (see README).',
+  libTitle: 'Library', libAddFolder: 'Add folder', libRescan: 'Rescan', libNoFolders: 'No folders yet. Add a folder with music.',
+  libTracks: 'tracks', libLoginHint: 'Sign in to see likes and playlists, or use Search.',
+  libGoSearch: 'To search', libLogin: 'Sign in',
+  qTitle: 'Queue', qClear: 'Clear', qEmpty: 'Queue is empty — add tracks from search or library.',
+  qPickOther: 'Find another version', qVersionsSoon: 'Version candidates: soon', qNoMatch: 'No audio found for this track, skipped.',
+  dlTitle: 'Downloads', dlUrlPh: 'Track or playlist link', dlStart: 'Download', dlFormat: 'Format',
+  dlActive: 'Downloading', dlPaused: 'Paused', dlDone: 'Done', dlError: 'Error — retry', dlCancel: 'Cancel', dlRetry: 'Retry',
+  dlPause: 'Pause', dlResume: 'Resume', dlStarted: 'Download started', dlFinished: 'Download finished', dlFailed: 'Download failed, see log',
+  npTitle: 'Now Playing', npNone: 'No track', npHint: 'Pick a track from search or library', npBack: 'Back to current line', npEditLrc: 'Edit LRC',
+  setTitle: 'Settings', setLook: 'Appearance', setTheme: 'Theme', setThemeHint: 'A new theme is one object in themes.ts',
+  setFollowSys: 'Follow system', setLang: 'Language', setSpSound: 'Spotify audio', setOrder: 'Audio source order',
+  setFallback: 'Automatic fallback enabled', setAccounts: 'Accounts', setNotConn: 'not connected', setLogin: 'Sign in',
+  setYtWarn: 'Note: using cookies with yt-dlp can rarely restrict a YouTube account — prefer a secondary account. Cookies are sent to yt-dlp only when needed.',
+  setMaint: 'Maintenance', setYtdlp: 'yt-dlp', setUnknown: 'version unknown', setVersion: 'Version', setUpdate: 'Update',
+  setUpdated: 'yt-dlp updated', setLog: 'Journal', setLogText: 'App logs (technical error details).',
+  setAbout: 'Lyra — About', setAboutText: 'Desktop music player for Linux. Content rights stay with the user.',
+  dlgSpTitle: 'Spotify — catalog only', dlgNoShow: "Don't show again", dlgOk: 'Got it', dlgSetup: 'Configure audio source',
+  dlgSpText: 'Spotify forbids playback in third-party players. Lyra imports the track list and covers, and finds audio on SoundCloud (default) or YouTube Music. Versions may differ from the original (remixes, live, different mastering).',
+  playEmpty: 'Nothing playing', playHint: 'Pick a track from search or library', playError: 'Cannot play this track',
+  srcPick: 'Source', setConnected: 'connected', setLogout: 'Sign out', authOk: 'Signed in', authOut: 'Signed out',
+  npNoLyrics: 'No lyrics for this track', qVersions: 'Other versions', qUse: 'Use',
+  volLabel: 'Volume', volMute: 'Mute', volUnmute: 'Unmute',
+  searchTracks: 'Tracks', searchPlaylists: 'Playlists',
+  plOnlySc: 'Playlist search works on SoundCloud — paste a link for other sources.',
+  plQueued: 'tracks queued',
+  hmContinue: 'Continue listening', hmResume: 'Resume', hmCharts: 'SoundCloud Top', hmShortcuts: 'Quick access',
+  dlAll: 'Download playlist', dlAllDone: 'Playlist downloaded', dlSkipped: 'already local',
+  plPlayAll: 'Play all',
+  setSource: 'Source', setThemeSection: 'Theme', setPlayback: 'Playback',
+  setFade: 'Fade between tracks', setFadeDur: 'Fade duration',
+  setAutoDl: 'Auto-download tracks', setAutoDlHint: 'While a track plays it is saved to the app folder, so the service is not hit again.',
+  setWidgets: 'Home widgets', wgCont: 'Continue listening', wgCharts: 'SoundCloud Top', wgShortcuts: 'Quick access',
+  setSpNote: 'Note: some tracks may play from YouTube Music — SoundCloud marks Go+ premieres as DRM, previews or region-locked tracks, and Lyra picks an equivalent automatically.',
+};
+
+export type Key = keyof typeof en;
+
+const ru: Record<Key, string> = {
+  navHome: 'Главная', navSearch: 'Поиск', navPlaylists: 'Плейлисты', navQueue: 'Очередь', navDownloads: 'Загрузки', navSettings: 'Настройки',
+  srcLocal: 'Локальные', srcSC: 'SoundCloud', srcYTM: 'YouTube Music', srcSP: 'Spotify',
+  searchTitle: 'Поиск', searchPh: 'Запрос, ссылка или вставка (Ctrl+V)', searchGo: 'Найти', searchWait: '…',
+  searchDetected: 'Определён источник', searchErr: 'Ошибка поиска, подробности в Журнале', searchNoRes: 'Ничего не найдено. Попробуйте другой запрос или источник.',
+  searchNeedId: 'Для Spotify нужны LYRA_SPOTIFY_CLIENT_ID + LYRA_SPOTIFY_CLIENT_SECRET (см. README).',
+  libTitle: 'Библиотека', libAddFolder: 'Добавить папку', libRescan: 'Пересканировать', libNoFolders: 'Папок пока нет. Добавьте папку с музыкой.',
+  libTracks: 'треков', libLoginHint: 'Войдите, чтобы видеть лайки и плейлисты, или используйте Поиск.',
+  libGoSearch: 'К поиску', libLogin: 'Войти',
+  qTitle: 'Очередь', qClear: 'Очистить', qEmpty: 'Очередь пуста — добавьте треки из поиска или библиотеки.',
+  qPickOther: 'Подобрать другую версию', qVersionsSoon: 'Кандидаты версий: скоро', qNoMatch: 'Звук для трека не найден, пропускаю.',
+  dlTitle: 'Загрузки', dlUrlPh: 'Ссылка на трек или плейлист', dlStart: 'Скачать', dlFormat: 'Формат',
+  dlActive: 'Скачивание', dlPaused: 'Пауза', dlDone: 'Готово', dlError: 'Ошибка — повтор', dlCancel: 'Отмена', dlRetry: 'Повторить',
+  dlPause: 'Пауза', dlResume: 'Продолжить', dlStarted: 'Скачивание начато', dlFinished: 'Скачивание завершено', dlFailed: 'Ошибка скачивания, см. лог',
+  npTitle: 'Now Playing', npNone: 'Нет трека', npHint: 'Выберите трек из поиска или библиотеки', npBack: 'К текущей строке', npEditLrc: 'Редактировать LRC',
+  setTitle: 'Настройки', setLook: 'Оформление', setTheme: 'Тема', setThemeHint: 'Новая тема — один объект в themes.ts',
+  setFollowSys: 'Как в системе', setLang: 'Язык', setSpSound: 'Звук Spotify', setOrder: 'Порядок источников звука',
+  setFallback: 'Автоматический фолбэк включён', setAccounts: 'Аккаунты', setNotConn: 'не подключён', setLogin: 'Войти',
+  setYtWarn: 'Внимание: использование cookies с yt-dlp в редких случаях приводит к ограничениям на аккаунте YouTube — лучше использовать второстепенный аккаунт. Cookies передаются в yt-dlp только при необходимости.',
+  setMaint: 'Обслуживание', setYtdlp: 'yt-dlp', setUnknown: 'версия неизвестна', setVersion: 'Версия', setUpdate: 'Обновить',
+  setUpdated: 'yt-dlp обновлён', setLog: 'Журнал', setLogText: 'Логи приложения (технические детали ошибок).',
+  setAbout: 'Lyra — О приложении', setAboutText: 'Десктопный музыкальный плеер для Linux. Права на контент остаются на пользователе.',
+  dlgSpTitle: 'Spotify — только каталог', dlgNoShow: 'Больше не показывать', dlgOk: 'Понятно', dlgSetup: 'Настроить источник звука',
+  dlgSpText: 'Spotify не разрешает воспроизведение в сторонних плеерах. Lyra импортирует список треков и обложки, а звук подбирает на SoundCloud (по умолчанию) или YouTube Music. Версия может отличаться от оригинала (ремиксы, live, другой мастеринг).',
+  playEmpty: 'Ничего не играет', playHint: 'Выберите трек из поиска или библиотеки', playError: 'Не могу воспроизвести трек',
+  srcPick: 'Источник', setConnected: 'подключён', setLogout: 'Выйти', authOk: 'Вход выполнен', authOut: 'Выход выполнен',
+  npNoLyrics: 'Текст для этого трека не найден', qVersions: 'Другие версии', qUse: 'Использовать',
+  volLabel: 'Громкость', volMute: 'Выключить звук', volUnmute: 'Включить звук',
+  searchTracks: 'Треки', searchPlaylists: 'Плейлисты',
+  plOnlySc: 'Поиск плейлистов работает в SoundCloud — для остальных вставьте ссылку.',
+  plQueued: 'треков в очереди',
+  hmContinue: 'Продолжить прослушивание', hmResume: 'Слушать', hmCharts: 'Топ SoundCloud', hmShortcuts: 'Быстрый доступ',
+  dlAll: 'Скачать плейлист', dlAllDone: 'Плейлист скачан', dlSkipped: 'уже локально',
+  plPlayAll: 'Слушать всё',
+  setSource: 'Источник', setThemeSection: 'Тема', setPlayback: 'Воспроизведение',
+  setFade: 'Плавный переход между треками', setFadeDur: 'Длительность перехода',
+  setAutoDl: 'Автоскачивание треков', setAutoDlHint: 'Пока трек играет, он сохраняется в папку приложения — сервис больше не дёргается.',
+  setWidgets: 'Виджеты Home', wgCont: 'Продолжить прослушивание', wgCharts: 'Топ SoundCloud', wgShortcuts: 'Быстрый доступ',
+  setSpNote: 'Примечание: часть треков может звучать с YouTube Music — SoundCloud помечает Go+-премьеры как DRM, превью или гео-закрытые, и Lyra автоматически подбирает эквивалент.',
+};
+
+export const strings: Record<Lang, Record<Key, string>> = { en, ru };
+
+export function detectLang(): Lang {
+  try {
+    return (navigator.language ?? 'en').toLowerCase().startsWith('ru') ? 'ru' : 'en';
+  } catch { return 'en'; }
+}
