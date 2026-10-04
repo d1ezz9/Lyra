@@ -20,7 +20,12 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit -p tsconfig.json
       - run: npx vitest run
-      - run: npm run dist
+      - name: Build main + renderer
+        run: npm run build
+      - name: Package AppImage
+        run: npx electron-builder --linux AppImage
+        env:
+          DEBUG: electron-builder
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*.AppImage
