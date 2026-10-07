@@ -1,8 +1,11 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, execFile, type ChildProcess } from 'node:child_process';
+import { promisify } from 'node:util';
 import net from 'node:net';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+
+const execFileAsync = promisify(execFile);
 
 /** mpv controlled via --input-ipc-server JSON IPC. Gapless via playlist append. */
 export class MpvPlayer {
@@ -21,6 +24,8 @@ export class MpvPlayer {
   start(): void {
     if (this.proc) return;
     try { fs.unlinkSync(this.sockPath); } catch { /* noop */ }
+    // kill orphaned players from crashed sessions (same socket pattern only)
+    void execFileAsync('pkill', ['-f', 'lyra-mpv-']).catch(() => undefined);
     this.proc = spawn('mpv', [
       '--idle=yes', '--no-video', '--no-terminal',
       `--input-ipc-server=${this.sockPath}`,

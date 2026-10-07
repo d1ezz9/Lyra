@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../store';
 import type { Track } from '@common/types';
-import { playTrack } from '../player';
+import { playSingle } from '../player';
 import { I } from '../icons';
+import { P } from '../icons';
 
 interface Pl { id: string; title: string; trackCount?: number; coverUrl?: string; covers?: string[]; }
 
@@ -38,9 +39,12 @@ export function Library(): React.ReactElement {
 
   useEffect(() => {
     if (s.source === 'local') return;
-    setItems([]);
     void (window.lyra.authStatus(s.source) as Promise<{ connected: boolean; name?: string }>)
       .then((r) => setConnected(!!r?.connected)).catch(() => setConnected(false));
+  }, [s.source, s.screen]);
+
+  useEffect(() => {
+    setItems([]);
   }, [s.source]);
 
   // online library content once connected
@@ -89,32 +93,22 @@ export function Library(): React.ReactElement {
     setTracks(r.tracks as Track[]);
   };
 
-  const play = async (tr: Track): Promise<void> => {
-    s.enqueue([tr]);
-    s.setIndex(useStore.getState().queue.length - 1);
-    await playTrack(tr);
+  const play = (tr: Track): void => {
+    void playSingle(tr);
   };
 
   const openPlaylist = async (pl: Pl): Promise<void> => {
     try {
-      const pid = pl.id.includes('playlist:') ? Number(pl.id.split('playlist:')[1]) : undefined;
-      const list = (await window.lyra.playlistTracks(s.source, { playlistId: pid, id: pl.id })) as Track[];
+      let list: Track[];
+      if (s.source === 'spotify') {
+        list = (await window.lyra.spotifyPlaylistTracks(pl.id)) as Track[];
+      } else {
+        const pid = pl.id.includes('playlist:') ? Number(pl.id.split('playlist:')[1]) : undefined;
+        list = (await window.lyra.playlistTracks(s.source, { playlistId: pid, id: pl.id })) as Track[];
+      }
       if (!list.length) { s.snack(t('searchNoRes')); return; }
       const { openPlaylistWithLocal } = await import('../playlists');
       await openPlaylistWithLocal(pl.id, s.source, pl.title, list);
-    } catch { s.snack(t('searchErr')); }
-  };
-
-  const downloadAll = async (pl: Pl): Promise<void> => {
-    try {
-      const pid = pl.id.includes('playlist:') ? Number(pl.id.split('playlist:')[1]) : undefined;
-      const list = (await window.lyra.playlistTracks(s.source, { playlistId: pid, id: pl.id })) as Track[];
-      if (!list.length) { s.snack(t('searchNoRes')); return; }
-      const { downloadPlaylist } = await import('../playlists');
-      s.snack(t('dlStarted'));
-      await downloadPlaylist(pl.id, list, 'opus', (p) => {
-        if (p.done + p.skipped >= p.total) s.snack(`${t('dlAllDone')} · ${p.skipped} ${t('dlSkipped')}`);
-      });
     } catch { s.snack(t('searchErr')); }
   };
 
@@ -123,6 +117,37 @@ export function Library(): React.ReactElement {
   return (
     <section>
       <h1 className="headline-s section-title">{t('libTitle')} · {s.source}</h1>
+      <div style={{ margin: '0 8px 12px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button className="m3 m3-filled" onClick={() => void import('../wave').then(({ startWave }) => startWave())}>
+          <P.play size={20} /> {t('waveTitle')}
+        </button>
+        <button className="m3 m3-tonal" onClick={() => {
+          const name = prompt(t('myPlName'));
+          if (name !== null) s.createPlaylist(name);
+        }}><I.add size={18} /> {t('myPlTitle')}</button>
+      </div>
+      {s.myplaylists.length > 0 && (
+        <>
+          <div className="grid">
+            {s.myplaylists.map((p) => (
+              <div key={p.id} className="card elevated" role="button" tabIndex={0}
+                onClick={() => { s.setCurrentPlaylist({ id: p.id, title: p.title, tracks: p.tracks }); s.setScreen('playlist'); }}>
+                <div className="collage">
+                  {[0, 1, 2, 3].map((k) => (
+                    <span key={k} className="cell">
+                      {p.tracks[k]?.coverUrl ? <img src={p.tracks[k].coverUrl as string} alt="" /> : <I.music size={24} />}
+                    </span>
+                  ))}
+                </div>
+                <div className="title-s" style={{ marginTop: 8 }}>{p.title}</div>
+                <div className="body-s" style={{ color: 'var(--on-surface-variant)' }}>
+                  {p.tracks.length} {t('libTracks')}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
       {s.source === 'local' ? (
         <>
           <div style={{ margin: '0 8px 12px', display: 'flex', gap: 8 }}>
@@ -196,12 +221,6 @@ export function Library(): React.ReactElement {
                   <div className="title-s" style={{ marginTop: 8 }}>{p.title}</div>
                   <div className="body-s" style={{ color: 'var(--on-surface-variant)' }}>
                     {p.trackCount ? `${p.trackCount} ${t('libTracks')}` : ''}
-                  </div>
-                  <div style={{ marginTop: 8 }}>
-                    <button className="m3 m3-tonal" style={{ height: 36 }}
-                      onClick={(e) => { e.stopPropagation(); void downloadAll(p); }}>
-                      <I.download size={18} /> {t('dlAll')}
-                    </button>
                   </div>
                 </div>
               ))}

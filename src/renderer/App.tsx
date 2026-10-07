@@ -5,10 +5,8 @@ import { Search } from './screens/Search';
 import { Settings } from './screens/Settings';
 import { Library } from './screens/Library';
 import { Home } from './screens/Home';
-import { Downloads } from './screens/Downloads';
 import { NowPlaying } from './screens/NowPlaying';
-import { Queue } from './screens/Queue';
-import { Slider } from './components/Progress';
+import { Slider, LinearProgress } from './components/Progress';
 import { I } from './icons';
 import { P } from './icons';
 import { LogoIcon } from './icons';
@@ -19,12 +17,10 @@ import type { Key } from './i18n';
 
 declare global { interface Window { lyra: Record<string, any>; } }
 
-const NAV: { id: 'home' | 'search' | 'playlists' | 'queue' | 'downloads' | 'settings'; label: Key; icon: (p: { size?: number }) => React.ReactElement }[] = [
+const NAV: { id: 'home' | 'search' | 'playlists' | 'settings'; label: Key; icon: (p: { size?: number }) => React.ReactElement }[] = [
   { id: 'home', label: 'navHome', icon: I.home },
   { id: 'search', label: 'navSearch', icon: I.search },
   { id: 'playlists', label: 'navPlaylists', icon: I.playlists },
-  { id: 'queue', label: 'navQueue', icon: I.queue },
-  { id: 'downloads', label: 'navDownloads', icon: I.download },
   { id: 'settings', label: 'navSettings', icon: I.settings },
 ];
 
@@ -89,6 +85,15 @@ export function App(): React.ReactElement {
         st.setPlaying(true);
         return;
       }
+      // endless wave: top up when running dry
+      if (st.currentPlaylist?.id === 'wave') {
+        const rest = st.queue.length - st.index - 1;
+        if (rest < 5) {
+          void import('./wave').then(({ buildWave }) => buildWave(15, st.queue.map((x) => x.id)).then((more) => {
+            if (more.length) useStore.getState().enqueue(more);
+          }));
+        }
+      }
       void advance(1);
     });
     (window.lyra.onMprisCmd as unknown as ((cb: (m: { action: string; arg?: number }) => void) => void) | undefined)?.((m) => {
@@ -105,6 +110,10 @@ export function App(): React.ReactElement {
   }, []);
   // account statuses refresh on login (sources now live in Settings)
   useEffect(() => {
+    void import('./player').then(({ purgeOrphanCache, pruneMissingLocal }) => {
+      void purgeOrphanCache();
+      void pruneMissingLocal();
+    });
     (window.lyra.onLoginDone as unknown as ((cb: (w: string) => void) => void) | undefined)?.(() => {
       useStore.getState().snack(useStore.getState().t('authOk'));
     });
@@ -160,6 +169,28 @@ export function App(): React.ReactElement {
             {!railOpen && <span className="label-m below">{t(n.label)}</span>}
           </button>
         ))}
+        <span style={{ flex: 1 }} />
+        {s.downloads && s.downloads.total > 0 && (
+          railOpen ? (
+            <div className="dl-widget" title={`${s.downloads.done} / ${s.downloads.total}`}>
+              <div className="body-s" style={{ color: 'var(--on-surface-variant)', marginBottom: 6 }}>
+                {s.downloads.done} / {s.downloads.total}
+              </div>
+              <LinearProgress value={(s.downloads.done / Math.max(1, s.downloads.total)) * 100} label="Downloads" />
+            </div>
+          ) : (
+            <div className="dl-fab" title={`${s.downloads.done} / ${s.downloads.total}`}>
+              <svg width={44} height={44} viewBox="0 0 44 44">
+                <circle cx={22} cy={22} r={17} fill="none" stroke="var(--surface-container-highest)" strokeWidth={4} />
+                <circle cx={22} cy={22} r={17} fill="none" stroke="var(--primary)" strokeWidth={4}
+                  strokeLinecap="round" strokeDasharray={106.8}
+                  strokeDashoffset={106.8 * (1 - s.downloads.done / Math.max(1, s.downloads.total))}
+                  transform="rotate(-90 22 22)" />
+              </svg>
+              <span className="dl-icon"><I.download size={20} /></span>
+            </div>
+          )
+        )}
       </nav>
 
       <div className="main-col">
@@ -168,16 +199,15 @@ export function App(): React.ReactElement {
         </header>
 
         <main className="content">
-          {s.screen === 'search' && <Search />}
-          {s.screen === 'settings' && <Settings />}
-          {s.screen === 'downloads' && <Downloads />}
-          {s.screen === 'nowplaying' && <NowPlaying />}
-          {s.screen === 'queue' && <Queue />}
-          {s.screen === 'home' && <Home />}
-          {s.screen === 'playlist' && <Playlist />}
-          {s.screen === 'playlists' && <Library />}
+          <div className={s.screen === 'search' ? 'screen-wrap' : 'screen-wrap screen-hidden'}><Search /></div>
+          <div className={s.screen === 'settings' ? 'screen-wrap' : 'screen-wrap screen-hidden'}><Settings /></div>
+          <div className={s.screen === 'nowplaying' ? 'screen-wrap' : 'screen-wrap screen-hidden'}><NowPlaying /></div>
+          <div className={s.screen === 'home' ? 'screen-wrap' : 'screen-wrap screen-hidden'}><Home /></div>
+          <div className={s.screen === 'playlist' ? 'screen-wrap' : 'screen-wrap screen-hidden'}><Playlist /></div>
+          <div className={s.screen === 'playlists' ? 'screen-wrap' : 'screen-wrap screen-hidden'}><Library /></div>
         </main>
 
+        {s.screen !== 'nowplaying' && (
         <footer className="player" aria-label="Now playing">
           <div className="player-slider">
             <Slider value={pos} max={dur || 100} label="Position"
@@ -217,6 +247,7 @@ export function App(): React.ReactElement {
             </span>
           </div>
         </footer>
+        )}
       </div>
       </div>
 

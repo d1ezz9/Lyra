@@ -32,6 +32,17 @@ const en = {
   plOnlySc: 'Playlist search works on SoundCloud — paste a link for other sources.',
   plQueued: 'tracks queued',
   hmContinue: 'Continue listening', hmResume: 'Resume', hmCharts: 'SoundCloud Top', hmShortcuts: 'Quick access',
+  hmRecent: 'Recently played', hmStats: 'On this device', hmEdit: 'Edit', hmDone: 'Done', hmAdd: 'Add widget',
+  chartsNa: 'Charts are available for SoundCloud and Spotify',
+  tmQueue: 'Add to queue', tmDownload: 'Download', tmLike: 'Like', tmUnlike: 'Unlike',
+  tmDislike: 'Dislike', tmUndislike: 'Remove dislike', tmAddToPl: 'Add to playlist', tmNewPl: 'New playlist',
+  waveTitle: 'My wave', waveHint: 'Like some tracks first — the wave plays music like them.',
+  myPlTitle: 'New playlist', myPlName: 'Name', myPlCreate: 'Create', myPlDelete: 'Delete playlist',
+  myPlRename: 'Rename', myPlRemove: 'Remove from playlist',
+  soundFrom: 'audio from {src}',
+  setDlFiles: 'Downloaded tracks', dlDeleteAll: 'Delete all from device', dlEmpty: 'No downloaded tracks yet',
+  shufflePlay: 'Shuffle play',
+  upNext: 'Next up',
   dlAll: 'Download playlist', dlAllDone: 'Playlist downloaded', dlSkipped: 'already local',
   plPlayAll: 'Play all',
   setSource: 'Source', setThemeSection: 'Theme', setPlayback: 'Playback',
@@ -75,6 +86,17 @@ const ru: Record<Key, string> = {
   plOnlySc: 'Поиск плейлистов работает в SoundCloud — для остальных вставьте ссылку.',
   plQueued: 'треков в очереди',
   hmContinue: 'Продолжить прослушивание', hmResume: 'Слушать', hmCharts: 'Топ SoundCloud', hmShortcuts: 'Быстрый доступ',
+  hmRecent: 'Недавнее', hmStats: 'На устройстве', hmEdit: 'Изменить', hmDone: 'Готово', hmAdd: 'Добавить виджет',
+  chartsNa: 'Чарты доступны для SoundCloud и Spotify',
+  tmQueue: 'В очередь', tmDownload: 'Скачать', tmLike: 'Нравится', tmUnlike: 'Убрать лайк',
+  tmDislike: 'Дизлайк', tmUndislike: 'Убрать дизлайк', tmAddToPl: 'В плейлист', tmNewPl: 'Новый плейлист',
+  waveTitle: 'Моя волна', waveHint: 'Лайкни несколько треков — волна будет играть похожее.',
+  myPlTitle: 'Новый плейлист', myPlName: 'Название', myPlCreate: 'Создать', myPlDelete: 'Удалить плейлист',
+  myPlRename: 'Переименовать', myPlRemove: 'Убрать из плейлиста',
+  soundFrom: 'звук с {src}',
+  setDlFiles: 'Скачанные треки', dlDeleteAll: 'Удалить всё с устройства', dlEmpty: 'Скачанных треков пока нет',
+  shufflePlay: 'Перемешать',
+  upNext: 'Далее',
   dlAll: 'Скачать плейлист', dlAllDone: 'Плейлист скачан', dlSkipped: 'уже локально',
   plPlayAll: 'Слушать всё',
   setSource: 'Источник', setThemeSection: 'Тема', setPlayback: 'Воспроизведение',
@@ -86,6 +108,10 @@ const ru: Record<Key, string> = {
 
 export const strings: Record<Lang, Record<Key, string>> = { en, ru };
 
+declare const __BUILD_ID__: string;
+export function buildId(): string {
+  try { return __BUILD_ID__; } catch { return 'dev'; }
+}
 export function detectLang(): Lang {
   try {
     return (navigator.language ?? 'en').toLowerCase().startsWith('ru') ? 'ru' : 'en';

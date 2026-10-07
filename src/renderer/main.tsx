@@ -13,15 +13,16 @@ if (!window.lyra) {
     downloadCancel: noop, onDownloadProgress: () => undefined,
     pickFolder: async () => null, findLocal: async () => [], cacheDir: async () => '',
     notify: noop, mpris: noop,
-    login: noop, spotifyOauth: async () => false, spotifyLibrary: async () => [],
+    login: noop, spotifyOauth: async () => false, spotifyLibrary: async () => [], spotifyPlaylistTracks: async () => [],
     scLibrary: async () => [], scCharts: async () => [], searchPlaylists: async () => [],
     playlistTracks: async () => [], playlistCovers: async () => [], win: async () => null,
     authStatus: async () => ({ connected: false }), onLoginDone: () => undefined,
     authClear: noop, defaultMusicDir: async () => '',
     sidecarLyrics: async () => null,
     ytdlpVersion: async () => 'dev', ytdlpUpdate: async () => 'dev',
-    userAgent: async () => 'Lyra/dev', lyrics: noop,
+    userAgent: async () => 'Lyra/dev', appVersion: async () => 'dev', lyrics: noop,
     onEnded: () => undefined, onMpv: () => undefined,
+    dlDir: async () => '', dlList: async () => [], dlDelete: async () => 0, readLog: async () => [], filesExist: async () => [], uiLog: async () => true,
   } as unknown as Window['lyra'];
 }
 

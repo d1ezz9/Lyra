@@ -29,6 +29,7 @@ export function Slider({ value, max, onScrub, label, small }: SliderProps): Reac
       <div className="slider-gutter">
         <div ref={ref} className="slider-track">
           <div className="slider-active" style={{ width: `${ratio * 100}%` }} />
+          <div className="slider-state" style={{ left: `${ratio * 100}%` }} />
           <div className="slider-thumb" style={{ left: `${ratio * 100}%` }} />
         </div>
       </div>

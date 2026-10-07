@@ -23,6 +23,15 @@ describe('matcher', () => {
   it('rejects live variant', () => {
     expect(scoreMatch(want, { title: 'Blinding Lights (Live)', artist: 'The Weeknd', duration: 200 })).toBe(-1);
   });
+  it('rejects wrong artist', () => {
+    expect(scoreMatch(want, { title: 'Blinding Lights', artist: 'DJ Random', duration: 200 })).toBe(-1);
+  });
+  it('rejects unrelated short title', () => {
+    expect(scoreMatch(want, { title: 'XYZ', artist: 'Someone', duration: 200 })).toBe(-1);
+  });
+  it('rejects far duration', () => {
+    expect(scoreMatch(want, { title: 'Blinding Lights', artist: 'The Weeknd', duration: 300 })).toBe(-1);
+  });
   it('fallback tolerant duration', () => {
     expect(scoreMatch(want, { title: 'Blinding Lights', artist: 'The Weeknd', duration: 208 })).toBeGreaterThan(0.4);
   });

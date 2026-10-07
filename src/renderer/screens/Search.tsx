@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import { useStore } from '../store';
 import { detectSourceFromUrl } from '@common/detectSource';
 import type { Track } from '@common/types';
-import { playTrack } from '../player';
+import { playTrack, playSingle } from '../player';
+import { TrackMenu } from '../components/TrackMenu';
+import { fmtDur } from '../format';
 import { I } from '../icons';
 
 const badgeClass: Record<string, string> = { soundcloud: '', youtubemusic: '', spotify: '', local: '' };
@@ -56,10 +58,8 @@ export function Search(): React.ReactElement {
     setSearched(true);
   };
 
-  const play = async (tr: Track): Promise<void> => {
-    s.enqueue([tr]);
-    s.setIndex(useStore.getState().queue.length - 1);
-    await playTrack({ ...tr });
+  const play = (tr: Track): void => {
+    void playSingle({ ...tr });
   };
 
   const openPlaylist = async (src: string, ref: { url?: string; playlistId?: number; id?: string }): Promise<void> => {
@@ -82,8 +82,7 @@ export function Search(): React.ReactElement {
       const tracks = (await window.lyra.playlistTracks(s.source, { url: pl.url, playlistId: pid })) as Track[];
       if (!tracks.length) { s.snack(t('searchNoRes')); return; }
       const { downloadPlaylist } = await import('../playlists');
-      const fmt = 'opus';
-      await downloadPlaylist(pl.id, tracks, fmt, (p) => {
+      await downloadPlaylist(pl.id, tracks, (p) => {
         if (p.done + p.skipped >= p.total) s.snack(`${t('dlAllDone')} · ${p.skipped} ${t('dlSkipped')}`);
       });
       s.snack(t('dlStarted'));
@@ -124,11 +123,11 @@ export function Search(): React.ReactElement {
             : <I.music />}</span>
           <span className="texts">
             <span className="t1">{tr.title}</span>
-            <span className="t2">{tr.artist}{tr.duration ? ` · ${Math.floor(tr.duration / 60)}:${String(tr.duration % 60).padStart(2, '0')}` : ''}</span>
+            <span className="t2">{tr.artist}{tr.duration ? ` · ${fmtDur(tr.duration)}` : ''}</span>
           </span>
           <span className="trail">
-            <span className={`badge ${badgeClass[tr.source] ?? ''}`}>{tr.source}</span>
-            <span className="icon-btn" aria-hidden="true"><I.play /></span>
+            <span className="badge">{tr.source}</span>
+            <TrackMenu track={tr} />
           </span>
         </div>
       ))}

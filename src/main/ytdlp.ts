@@ -8,6 +8,7 @@ const run = promisify(execFile);
 let cookiesPath: string | undefined;
 
 export function setCookiesFile(p: string | undefined): void { cookiesPath = p; }
+export function hasCookiesFile(): boolean { return !!cookiesPath && fs.existsSync(cookiesPath); }
 
 /** Thin yt-dlp wrapper: resolve stream URL, search, metadata, download. */
 export async function ytdlp(args: string[], withCookies = false): Promise<string> {

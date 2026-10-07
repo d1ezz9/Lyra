@@ -5,7 +5,9 @@ import { themes } from '../themes';
 import { DropDown } from '../components/DropDown';
 import { Slider } from '../components/Progress';
 import { I } from '../icons';
+import { fmtSize } from '../format';
 import logoUrl from '../assets/logo.png';
+import { buildId } from '../i18n';
 import type { Lang } from '../i18n';
 
 const ORDER: SourceId[] = ['local', 'soundcloud', 'youtubemusic', 'spotify'];
@@ -23,7 +25,14 @@ export function Settings(): React.ReactElement {
   const s = useStore();
   const t = s.t;
   const [ver, setVer] = useState('');
+  const [appVer, setAppVer] = useState('');
   const [conn, setConn] = useState<Record<string, { on: boolean; name?: string }>>({});
+  const [files, setFiles] = useState<{ path: string; size: number }[]>([]);
+  const [logLines, setLogLines] = useState<string[]>([]);
+  const refreshFiles = async (): Promise<void> => {
+    try { setFiles((await window.lyra.dlList()) as { path: string; size: number }[]); }
+    catch { setFiles([]); }
+  };
   const refresh = async (): Promise<void> => {
     const next: Record<string, { on: boolean; name?: string }> = {};
     for (const id of ['soundcloud', 'youtubemusic', 'spotify']) {
@@ -36,6 +45,9 @@ export function Settings(): React.ReactElement {
   };
   useEffect(() => {
     void refresh();
+    void refreshFiles();
+    void (window.lyra.readLog() as Promise<string[]>).then(setLogLines).catch(() => setLogLines([]));
+    void (window.lyra.appVersion() as Promise<string>).then(setAppVer).catch(() => undefined);
     void (window.lyra.ytdlpVersion() as Promise<unknown>).then((v: unknown) => setVer(String(v))).catch(() => undefined);
   }, []);
   const logout = async (id: string): Promise<void> => {
@@ -136,9 +148,19 @@ export function Settings(): React.ReactElement {
         ['cont', 'wgCont'],
         ['charts', 'wgCharts'],
         ['shortcuts', 'wgShortcuts'],
+        ['recent', 'hmRecent'],
+        ['stats', 'hmStats'],
       ] as const).map(([k, label]) => (
         <div key={k} className="set-row">
           <div className="texts"><div className="body-l">{t(label)}</div></div>
+          <button className="icon-btn" aria-label="Move up" style={{ width: 40, height: 40 }}
+            onClick={() => s.moveWidget(k, -1)}>
+            <svg width={20} height={20} viewBox="0 0 24 24" fill="currentColor"><path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z" /></svg>
+          </button>
+          <button className="icon-btn" aria-label="Move down" style={{ width: 40, height: 40 }}
+            onClick={() => s.moveWidget(k, 1)}>
+            <svg width={20} height={20} viewBox="0 0 24 24" fill="currentColor"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" /></svg>
+          </button>
           <Switch on={s.widgets[k]} onFlip={() => s.setWidget(k, !s.widgets[k])} />
         </div>
       ))}
@@ -199,13 +221,62 @@ export function Settings(): React.ReactElement {
       </div>
       <details style={{ margin: '8px' }}><summary className="label-l" style={{ cursor: 'pointer' }}>{t('setLog')}</summary>
         <p className="body-m">{t('setLogText')}</p>
+        <div style={{ margin: '8px 0' }}>
+          <button className="m3 m3-tonal" style={{ height: 32 }}
+            onClick={() => {
+              try { void navigator.clipboard.writeText(logLines.join('\n')); s.snack('OK'); } catch { /* noop */ }
+            }}>Copy</button>
+        </div>
+        <pre className="body-s" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: 'var(--surface-container-low)', borderRadius: 8, padding: 12, maxHeight: 240, overflow: 'auto' }}>
+          {logLines.length ? logLines.join('\n') : '—'}
+        </pre>
       </details>
+
+      <h2 className="title-m section-title">{t('setDlFiles')}</h2>
+      <div className="set-row">
+        <div className="texts"><div className="body-l">{t('dlFormat')}</div></div>
+        <DropDown label={t('dlFormat')} value={s.dlFormat}
+          options={['opus', 'mp3', 'm4a', 'flac'].map((f) => ({ v: f, label: f }))}
+          onPick={(v) => s.setDlFormat(v)} />
+      </div>
+      {files.length === 0 && (
+        <p className="body-m" style={{ color: 'var(--on-surface-variant)', margin: '0 8px' }}>{t('dlEmpty')}</p>
+      )}
+      {files.map((f) => (
+        <div key={f.path} className="set-row">
+          <div className="texts">
+            <div className="body-m">{f.path.split('/').pop()}</div>
+            <div className="body-s" style={{ color: 'var(--on-surface-variant)' }}>{f.path} · {fmtSize(f.size)}</div>
+          </div>
+          <button className="icon-btn" aria-label="Delete"
+            onClick={() => {
+              void (window.lyra.dlDelete([f.path]) as Promise<number>).then(() => {
+                void import('../player').then(({ dropCacheForFiles }) => dropCacheForFiles([f.path]));
+                void refreshFiles();
+              });
+            }}>
+            <I.close size={20} />
+          </button>
+        </div>
+      ))}
+      {files.length > 0 && (
+        <div style={{ margin: '12px 8px' }}>
+          <button className="m3 m3-outline" onClick={() => {
+            const paths = files.map((f) => f.path);
+            void (window.lyra.dlDelete(paths) as Promise<number>).then(() => {
+              void import('../player').then(({ dropCacheForFiles }) => dropCacheForFiles(paths));
+              void refreshFiles();
+            });
+          }}>{t('dlDeleteAll')}</button>
+        </div>
+      )}
 
       <div className="set-row">
         <img src={logoUrl} width={48} height={48} alt="Lyra" style={{ borderRadius: 12 }} />
         <div className="texts">
           <div className="body-l">{t('setAbout')}</div>
           <div className="body-m" style={{ color: 'var(--on-surface-variant)' }}>{t('setAboutText')}</div>
+          <div className="body-s" style={{ color: 'var(--on-surface-variant)' }}>{appVer} · {buildId()}</div>
         </div>
       </div>
     </section>

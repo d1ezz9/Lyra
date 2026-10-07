@@ -7,8 +7,8 @@ import fs from 'node:fs';
 import { xdgDir } from './paths.js';
 import { openDb } from './db.js';
 import { MpvPlayer } from './mpv.js';
-import { resolveStreamUrl, searchFlat, ytdlp, ytdlpVersion, updateYtdlp, httpHeaders, setCookiesFile } from './ytdlp.js';
-import { userAgent } from '../../common/userAgent.js';
+import { resolveStreamUrl, searchFlat, ytdlp, ytdlpVersion, updateYtdlp, httpHeaders, setCookiesFile, hasCookiesFile } from './ytdlp.js';
+import { userAgent, appVersion } from '../../common/userAgent.js';
 import { scoreMatch, MATCH_THRESHOLD } from '../../common/matcher.js';
 import type { SourceId, Track } from '../../common/types.js';
 import { Mpris } from './mpris.js';
@@ -64,6 +64,7 @@ app.whenReady().then(() => {
   for (const k of ['config', 'cache', 'data'] as const) fs.mkdirSync(xdgDir(k), { recursive: true });
   openDb();
   createWindow();
+  dlog(`boot Lyra build ${BOOT_ID}`);
   void mpris.init('Lyra', (m) => {
     try {
       fs.appendFileSync(path.join(xdgDir('cache'), 'lyra.log'), `${new Date().toISOString()} ${m}\n`);
@@ -77,6 +78,19 @@ app.whenReady().then(() => {
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('quit', () => mpv.stop());
+
+// single instance: a second launch focuses the running window instead of
+// starting another mpv (two players = mixed-up "random" audio)
+if (!app.requestSingleInstanceLock()) app.quit();
+else {
+  app.on('second-instance', () => {
+    if (win && !win.isDestroyed()) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    }
+  });
+}
 
 // ---- playback ----
 ipcMain.handle('lyra:control', async (_e, cmd: string, arg?: number) => {
@@ -93,36 +107,97 @@ ipcMain.handle('lyra:control', async (_e, cmd: string, arg?: number) => {
 });
 
 /** Central play entry: resolves any track to audio and loads it into mpv. */
+let playSeq = 0;
 ipcMain.handle('lyra:play-track', async (_e, t: Track, audioOrder: SourceId[]) => {
+  const my = ++playSeq;
+  const alive = (): boolean => my === playSeq;
+  dlog(`[play#${my}] want ${t.source} "${t.artist} — ${t.title}" url=${t.url ?? '(none)'} local=${t.localPath ?? '(none)'}`);
   // previous track must stop NOW, even while the next one is still resolving
   try { await mpv.halt(); } catch { /* noop */ }
+  const playOne = async (stream: string): Promise<{ ok: true; streamUrl: string }> => {
+    if (!alive()) throw new Error('superseded');
+    await mpv.load(stream); // a player error here must NEVER trigger another song
+    if (!alive()) throw new Error('superseded');
+    return { ok: true, streamUrl: stream };
+  };
   try {
-    if (t.localPath) { await mpv.load(t.localPath); return { ok: true, streamUrl: t.localPath }; }
+    if (t.localPath) {
+      // verify the file is actually there and really THIS track (not a stale/false mapping)
+      try {
+        if (!fs.existsSync(t.localPath)) throw new Error('local-gone');
+        if (t.duration > 30) {
+          const mm = await import('music-metadata') as unknown as {
+            parseFile: (f: string) => Promise<{ format: { duration?: number } }>;
+          };
+          const meta = await mm.parseFile(t.localPath).catch(() => null);
+          const d = Math.round(meta?.format.duration ?? 0);
+          if (d > 30 && Math.abs(d - t.duration) > 8) throw new Error('local-mismatch');
+        }
+      } catch (e) {
+        if (String(e).includes('local-')) throw e;
+        // metadata unreadable: play anyway (better than silence)
+      }
+      dlog(`[play#${my}] local file ok: ${t.localPath}`);
+      return playOne(t.localPath);
+    }
     if (t.source === 'spotify') {
-      const m = await matchAudio(t, audioOrder, ['spotify']);
+      const m = await matchAudio(t, audioOrder, ['spotify'], `[play#${my}]`);
       if (!m) return { ok: false, reason: 'no-match' };
       const stream = await resolveStreamUrl(m.url, false);
-      await mpv.load(stream);
-      return { ok: true, audioSource: m.source, streamUrl: stream };
+      dlog(`[play#${my}] spotify -> ${m.source} [${streamHost(stream)}]`);
+      return { ...(await playOne(stream)), audioSource: m.source };
     }
     if (!t.url) return { ok: false, reason: 'no-url' };
+    let stream: string;
+    let audioSource: SourceId | undefined;
     try {
-      const stream = await resolveStreamUrl(t.url, false);
-      await mpv.load(stream);
-      return { ok: true, streamUrl: stream };
+      stream = await resolveStreamUrl(t.url, false);
+      dlog(`[play#${my}] direct resolve ok [${streamHost(stream)}]`);
     } catch (e) {
-      if (!isPlayableError(e)) throw e;
-      // DRM / preview / geo / deleted: find the same track on another platform
-      const m = await matchAudio(t, audioOrder, [t.source]);
-      if (!m) return { ok: false, reason: audioReason(e) };
-      const stream = await resolveStreamUrl(m.url, false);
-      await mpv.load(stream);
-      return { ok: true, audioSource: m.source, streamUrl: stream };
+      dlog(`[play#${my}] direct resolve FAILED: ${String(e).split('\n').pop()?.slice(0, 160)}`);
+      // logged-in users get one retry WITH cookies (private/403/login-gated tracks)
+      if (/403|private|login|sign in/i.test(String(e)) && hasCookiesFile() && (t.source === 'soundcloud' || t.source === 'youtubemusic')) {
+        try { stream = await resolveStreamUrl(t.url, true); dlog(`[play#${my}] cookies retry ok`); }
+        catch { ({ stream, audioSource } = await fallbackStream(t, audioOrder, e, `[play#${my}]`)); }
+      } else if (isPlayableError(e)) {
+        ({ stream, audioSource } = await fallbackStream(t, audioOrder, e, `[play#${my}]`));
+      } else throw e;
     }
+    const r = await playOne(stream!);
+    dlog(`[play#${my}] LOADED${audioSource ? ` via fallback ${audioSource}` : ''} [${streamHost(stream!)}]`);
+    return audioSource ? { ...r, audioSource } : r;
   } catch (err) {
+    if (String(err).includes('superseded')) { dlog(`[play#${my}] superseded by newer request`); return { ok: false, reason: 'superseded' }; }
+    dlog(`[play#${my}] FAILED: ${String(err).slice(0, 160)}`);
     return { ok: false, reason: String(err).slice(0, 200) };
   }
 });
+
+async function fallbackStream(t: Track, audioOrder: SourceId[], e: unknown, tag: string): Promise<{ stream: string; audioSource: SourceId }> {
+  // DRM / preview / geo / deleted: find the SAME track on another platform
+  const m = await matchAudio(t, audioOrder, [t.source], tag);
+  if (!m) throw new Error(`no-match:${audioReason(e)}`);
+  dlog(`${tag} fallback -> ${m.source} ${m.url}`);
+  const stream = await resolveStreamUrl(m.url, false);
+  return { stream, audioSource: m.source };
+}
+/** Short stream origin for the journal (host, or 'local file'). */
+function streamHost(stream: string): string {
+  try { return new URL(stream).hostname; }
+  catch { return 'local file'; }
+}
+const BOOT_ID = `${mainVersion()}-${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')}`;
+function mainVersion(): string {
+  try {
+    const raw = fs.readFileSync(path.join(app.getAppPath(), 'package.json'), 'utf8');
+    return (JSON.parse(raw) as { version?: string }).version ?? appVersion();
+  } catch { return appVersion(); }
+}
+export function dlog(msg: string): void {
+  try {
+    fs.appendFileSync(path.join(xdgDir('cache'), 'lyra.log'), `${new Date().toISOString()} ${msg}\n`);
+  } catch { /* noop */ }
+}
 
 /** Errors worth a cross-platform fallback (vs. fatal ones like no network). */
 function isPlayableError(e: unknown): boolean {
@@ -137,25 +212,29 @@ function audioReason(e: unknown): string {
   return 'unavailable';
 }
 
-async function matchAudio(t: Track, order: SourceId[], exclude: SourceId[]): Promise<{ source: SourceId; url: string } | null> {
+async function matchAudio(t: Track, order: SourceId[], exclude: SourceId[], tag = '[match]'): Promise<{ source: SourceId; url: string } | null> {
   for (const src of order) {
     if (src !== 'soundcloud' && src !== 'youtubemusic') continue;
     if (exclude.includes(src)) continue;
     const prefix = src === 'soundcloud' ? 'scsearch8:' : 'ytsearch8:';
     let entries;
     try { entries = await searchFlat(`${prefix}${t.title} ${t.artist}`, 8, false); }
-    catch { continue; }
-    let best: { score: number; url: string } | null = null;
+    catch (e) { dlog(`${tag} ${src} search failed: ${String(e).slice(0, 120)}`); continue; }
+    let best: { score: number; url: string; title: string } | null = null;
+    const scored: string[] = [];
     for (const c of entries) {
       if (!c.url) continue;
       const s = scoreMatch(
         { title: t.title, artist: t.artist, duration: t.duration },
         { title: c.title, artist: c.artist ?? '', duration: c.duration ?? 0 },
       );
-      if (s >= MATCH_THRESHOLD && (!best || s > best.score)) best = { score: s, url: c.url };
+      scored.push(`${s < 0 ? 'REJ' : s.toFixed(2)} "${(c.title ?? '').slice(0, 40)}"`);
+      if (s >= MATCH_THRESHOLD && (!best || s > best.score)) best = { score: s, url: c.url, title: c.title };
     }
-    if (best) return { source: src, url: best.url };
+    dlog(`${tag} ${src} candidates: ${scored.slice(0, 5).join(' | ') || '(none)'}`);
+    if (best) { dlog(`${tag} ${src} BEST ${best.score.toFixed(2)} "${best.title.slice(0, 50)}"`); return { source: src, url: best.url }; }
   }
+  dlog(`${tag} no match above threshold`);
   return null;
 }
 
@@ -163,10 +242,12 @@ async function matchAudio(t: Track, order: SourceId[], exclude: SourceId[]): Pro
 ipcMain.handle('lyra:search', async (_e, q: string, source: string) => {
   const prefix = source === 'soundcloud' ? 'scsearch10:' : source === 'youtubemusic' ? 'ytsearch10:' : '';
   const entries = await searchFlat(prefix ? `${prefix}${q}` : q, 10, false);
-  return entries.map((e, i) => ({
-    id: `${source}:${e.id || i}`, source, title: e.title, artist: e.artist ?? '',
-    duration: e.duration ?? 0, coverUrl: e.thumbnail, url: e.url || undefined,
-  }));
+  return entries
+    .filter((e) => e.title?.trim())
+    .map((e, i) => ({
+      id: `${source}:${e.id || i}`, source, title: e.title.trim(), artist: e.artist?.trim() || 'Unknown',
+      duration: e.duration ?? 0, coverUrl: e.thumbnail, url: e.url || undefined,
+    }));
 });
 
 // ---- Spotify Web API (client credentials = search/catalog; needs id+secret in env) ----
@@ -283,23 +364,43 @@ function normName(s: string): string {
 }
 
 /** Batch-match tracks against audio files already present in a folder (no re-download). */
-ipcMain.handle('lyra:find-local', async (_e, folder: string, queries: { title: string; artist: string }[]) => {
+ipcMain.handle('lyra:find-local', async (_e, folder: string, queries: { title: string; artist: string; duration?: number }[]) => {
   let files: string[] = [];
   try {
     files = fs.readdirSync(folder).filter((f) => ['.mp3', '.flac', '.ogg', '.opus', '.m4a', '.wav'].includes(path.extname(f).toLowerCase()));
   } catch { return queries.map(() => null); }
-  return queries.map((q) => {
+  let parseFile: ((f: string) => Promise<{ format: { duration?: number } }>) | null = null;
+  try {
+    const mm = await import('music-metadata') as unknown as {
+      parseFile: (f: string, o?: unknown) => Promise<{ format: { duration?: number } }>;
+    };
+    parseFile = mm.parseFile;
+  } catch { /* name-only matching */ }
+  const out: (string | null)[] = [];
+  for (const q of queries) {
     const nt = normName(q.title);
     const na = normName(q.artist);
-    const key = nt.length >= 6 ? nt.slice(0, Math.min(24, nt.length)) : `${na} ${nt}`.trim();
-    if (!key) return null;
+    const words = `${na} ${nt}`.split(' ').filter((w) => w.length > 1);
+    const longKey = nt.replace(/ /g, '').length >= 10 ? nt.replace(/ /g, '') : '';
     const hit = files.find((f) => {
       const nf = normName(path.basename(f, path.extname(f)));
-      return key.split(' ').filter((w) => w.length > 2).every((w) => nf.includes(w)) && nf.length > 0
-        || (na && nf.includes(na) && nf.includes(nt.slice(0, 12)));
+      const flat = nf.replace(/ /g, '');
+      if (longKey && flat.includes(longKey)) return true;
+      if (words.length && words.every((w) => nf.includes(w))) return true;
+      return false;
     });
-    return hit ? path.join(folder, hit) : null;
-  });
+    if (!hit) { out.push(null); continue; }
+    // duration cross-check kills false positives (remixes/covers with similar names)
+    if (hit && parseFile && (q.duration ?? 0) > 30) {
+      try {
+        const meta = await parseFile(path.join(folder, hit)).catch(() => null);
+        const d = Math.round(meta?.format.duration ?? 0);
+        if (d > 30 && Math.abs(d - (q.duration ?? 0)) > 8) { out.push(null); continue; }
+      } catch { /* keep name match */ }
+    }
+    out.push(path.join(folder, hit));
+  }
+  return out;
 });
 
 ipcMain.handle('lyra:download-start', async (e, url: string, format: string, dest?: string, outName?: string) => {
@@ -336,6 +437,48 @@ ipcMain.handle('lyra:download-start', async (e, url: string, format: string, des
 ipcMain.handle('lyra:download-cancel', async (_e, id: string) => {
   dlJobs.get(id)?.kill('SIGTERM');
   dlJobs.delete(id);
+  return true;
+});
+
+// ---- downloaded files management (Settings) ----
+function managedDirs(): string[] {
+  const dirs = [path.join(app.getPath('music'), 'Lyra'), path.join(xdgDir('data'), 'downloads')];
+  return dirs.filter((d) => { try { return fs.statSync(d).isDirectory(); } catch { return false; } });
+}
+ipcMain.handle('lyra:dl-dir', () => path.join(app.getPath('music'), 'Lyra'));
+ipcMain.handle('lyra:dl-list', () => {
+  const out: { path: string; size: number }[] = [];
+  for (const d of managedDirs()) {
+    let files: string[] = [];
+    try { files = fs.readdirSync(d); } catch { continue; }
+    for (const f of files) {
+      if (!['.mp3', '.flac', '.ogg', '.opus', '.m4a', '.wav'].includes(path.extname(f).toLowerCase())) continue;
+      const p = path.join(d, f);
+      try { out.push({ path: p, size: fs.statSync(p).size }); } catch { /* noop */ }
+    }
+  }
+  return out;
+});
+ipcMain.handle('lyra:dl-delete', async (_e, paths: string[]) => {
+  let n = 0;
+  for (const p of paths) {
+    try { fs.unlinkSync(p); n++; } catch { /* noop */ }
+  }
+  return n;
+});
+ipcMain.handle('lyra:files-exist', (_e, paths: string[]) => {
+  return paths.map((p) => {
+    try { return fs.existsSync(p); } catch { return false; }
+  });
+});
+ipcMain.handle('lyra:read-log', () => {
+  try {
+    const lines = fs.readFileSync(path.join(xdgDir('cache'), 'lyra.log'), 'utf8').split('\n').filter(Boolean);
+    return lines.slice(-120);
+  } catch { return []; }
+});
+ipcMain.handle('lyra:ui-log', (_e, msg: string) => {
+  dlog(`[ui] ${String(msg).slice(0, 220)}`);
   return true;
 });
 
@@ -452,10 +595,10 @@ ipcMain.handle('lyra:playlist-tracks', async (_e, source: string, ref: { id?: st
     if (!line.trim()) continue;
     try {
       const j = JSON.parse(line) as { id?: string; title?: string; uploader?: string; duration?: number; thumbnails?: { url?: string }[]; webpage_url?: string; url?: string };
-      if (!j.title) continue;
+      if (!j.title?.trim()) continue;
       tracks.push({
         id: `${source}:${j.id ?? tracks.length}`, source: source as SourceId,
-        title: j.title, artist: j.uploader ?? '', duration: Math.round(j.duration ?? 0),
+        title: j.title.trim(), artist: j.uploader?.trim() || 'Unknown', duration: Math.round(j.duration ?? 0),
         coverUrl: j.thumbnails?.slice(-1)[0]?.url, url: j.webpage_url ?? j.url,
       });
     } catch { /* skip */ }
@@ -532,8 +675,7 @@ async function spotifyFetch(pathname: string): Promise<unknown> {
   return r.json() as Promise<unknown>;
 }
 
-ipcMain.handle('lyra:spotify-library', async (_e, kind: 'playlists' | 'liked' | 'albums' | 'artists') => {
-  if (kind === 'playlists') {
+ipcMain.handle('lyra:spotify-library', async (_e, kind: 'playlists' | 'liked' | 'albums' | 'artists') => {  if (kind === 'playlists') {
     const j = (await spotifyFetch('/me/playlists?limit=30')) as { items?: { id: string; name: string; tracks: { total: number }; images: { url: string }[] }[] };
     return (j.items ?? []).map((p) => ({ id: `spotify:playlist:${p.id}`, source: 'spotify', title: p.name, trackCount: p.tracks.total, coverUrl: p.images[0]?.url }));
   }
@@ -549,6 +691,18 @@ ipcMain.handle('lyra:spotify-library', async (_e, kind: 'playlists' | 'liked' | 
   return ((j.artists?.items ?? []).map((a) => ({ name: a.name, coverUrl: a.images[0]?.url })));
 });
 
+ipcMain.handle('lyra:spotify-playlist-tracks', async (_e, playlistId: string) => {
+  const id = String(playlistId).split(':').pop();
+  const j = (await spotifyFetch(`/playlists/${id}/tracks?limit=100&fields=items(track(id,name,artists(name),duration_ms,album(images))))`)) as {
+    items?: { track: { id: string; name: string; artists: { name: string }[]; duration_ms: number; album: { images: { url: string }[] } } }[];
+  };
+  return (j.items ?? []).filter((x) => x.track && !x.track.id.startsWith('episode')).map((x) => ({
+    id: `spotify:${x.track.id}`, source: 'spotify', title: x.track.name,
+    artist: x.track.artists.map((a) => a.name).join(', '),
+    duration: Math.round(x.track.duration_ms / 1000), coverUrl: x.track.album.images[0]?.url,
+  }));
+});
+
 // ---- misc ----
 ipcMain.handle('lyra:notify', (_e, title: string, body: string) => { notify(title, body); return true; });
 ipcMain.handle('lyra:mpris', (_e, kind: string, payload?: unknown) => {
@@ -560,6 +714,7 @@ ipcMain.handle('lyra:mpris', (_e, kind: string, payload?: unknown) => {
 ipcMain.handle('lyra:ytdlp-version', async () => ytdlpVersion().catch((e: Error) => `error: ${e.message}`));
 ipcMain.handle('lyra:ytdlp-update', async () => updateYtdlp().catch((e: Error) => `error: ${e.message}`));
 ipcMain.handle('lyra:user-agent', () => userAgent());
+ipcMain.handle('lyra:version', () => BOOT_ID);
 ipcMain.handle('lyra:lyrics-lrclib', async (_e, title: string, artist: string) => {
   const u = `https://lrclib.net/api/get?track_name=${encodeURIComponent(title)}&artist_name=${encodeURIComponent(artist)}`;
   const r = await fetch(u, { headers: httpHeaders() });

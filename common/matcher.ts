@@ -38,7 +38,10 @@ export function scoreMatch(
   if (candVariant && !wantVariant) return -1; // exclude live/remix/cover unless original has it
   if (isPreview(cand.duration, wanted.duration)) return -1;
   const t = dice(normalize(wt), normalize(cand.title));
+  if (t < 0.45) return -1; // title must really match
   const a = dice(normalize(wa), normalize(cand.artist));
+  if (wa && cand.artist && a < 0.4) return -1; // different artist, not a version
+  if (wanted.duration > 30 && cand.duration > 30 && Math.abs(cand.duration - wanted.duration) > 15) return -1;
   const dd = Math.abs(cand.duration - wanted.duration);
   const d = dd <= 3 ? 1 : dd <= 10 ? 0.5 : 0;
   return 0.6 * t + 0.3 * a + 0.1 * d;
